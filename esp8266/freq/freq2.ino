@@ -144,4 +144,40 @@ void loop()
       microseconds += sampling_period_us;*/
   }
  // microseconds_start = micros();
-}
+
+FFT.Windowing(vReal, samples, FFT_WIN_TYP_HAMMING, FFT_FORWARD);  /* Weigh data */
+  FFT.Compute(vReal, vImag, samples, FFT_FORWARD); /* Compute FFT */
+  FFT.ComplexToMagnitude(vReal, vImag, samples); /* Compute magnitudes */
+ 
+  for( int i = 2; i < (samples/2); i++){
+    Serial.print((samplingFrequency/samples)*i);
+    Serial.print("Hz");
+    Serial.print(" ");
+    Serial.println(vReal[i], 4);
+    }
+
+  SearchPeaks(samples,vReal,MaxValues);
+  PrintIndexArray(MaxValues);
+  double x = FFT.MajorPeak(vReal, samples, samplingFrequency);
+  
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+
+  
+  int j;
+   sprintf(msg, "eszterga");
+    for( int i = 0; i < 10; i++)
+     {
+   
+        j=MaxValues[i];
+        snprintf (msg, MSG_BUFFER_SIZE, "%s, freq=%.2f", msg, (samplingFrequency/samples)*MaxValues[i]);
+     }
+   Serial.print("Publish message: ");
+   Serial.println(msg);
+   client.publish("esp8266", msg);
+   
+ 
+   delay(2000); 
+}  
