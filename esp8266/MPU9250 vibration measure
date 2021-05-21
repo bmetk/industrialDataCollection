@@ -1,0 +1,128 @@
+/**********Megjegyzés**********/
+//Ez külön a rezgésmérő kódja, ami az ESP8266-ra készült
+//A végleges rendszerben a kód összefésülésre került a mikrofon kódjával
+//és ESP32-n került megvalósításra, ez Dokupil Bencénél található
+/******************************/
+
+#include <MPU9250_asukiaaa.h>
+#include "arduinoFFT.h"
+#include <TaskScheduler.h>
+
+MPU9250_asukiaaa mySensor;
+arduinoFFT FFT = arduinoFFT();
+
+int addr = 0;                                       //Aktuálisan erre a tömkbindexre írunk
+const int sampleNum = 1024;
+
+unsigned long samplingFrequency = 1000;             //[Hz]
+
+double vReal_accel[sampleNum];
+double vImag_accel[sampleNum];
+
+
+unsigned long previousMicros = 0;
+unsigned long samplingTime = round(1000000.0 / samplingFrequency);        //Mintavételi idő mikroszekundumban
+
+unsigned long startTime = 0;
+unsigned long endTime = 0;
+unsigned long deltaTime = 0;
+
+double x = 0.0;
+const uint16_t topPeakNum = 10;                                           //N darab legmagasabb csúcs;       N <= sampleNum/2
+double topPeak_accel[topPeakNum];
+
+void setup()
+{
+  Wire.begin();
+  mySensor.setWire(&Wire);
+  mySensor.beginAccel(ACC_FULL_SCALE_2_G);                                //+- 2g méréshatár
+
+  Serial.begin(115200);
+  while (!Serial);
+  Serial.println("started");
+
+}
+
+
+void loop() {
+
+  previousMicros = micros();
+
+  while (addr < sampleNum)
+  {
+    if (micros() >= previousMicros + samplingTime)
+    {
+      mySensor.accelUpdate();
+      previousMicros += samplingTime;
+      vReal_accel[addr] = (double)mySensor.accelSqrt();
+      vImag_accel[addr] = 0.0;
+
+      addr = addr + 1;
+    }
+  }
+  addr = 0;
+
+  startTime = micros();
+
+  FFT.Windowing(vReal_accel, sampleNum, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(vReal_accel, vImag_accel, sampleNum, FFT_FORWARD);
+  FFT.ComplexToMagnitude(vReal_accel, vImag_accel, sampleNum);
+
+  endTime = micros();
+
+
+  FFT.Windowing(vReal_micro, sampleNum, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(vReal_micro, vImag_micro, sampleNum, FFT_FORWARD);
+  FFT.ComplexToMagnitude(vReal_micro, vImag_micro, sampleNum);
+
+  deltaTime = endTime - startTime;
+  Serial.print("Az eltelt idő: ");
+  Serial.println(deltaTime);
+
+  topPeaks(vReal_accel, topPeak_accel);
+
+  for (int i = 0 ; i < topPeakNum; i++)
+  {
+    Serial.print(topPeak_accel[i]);
+    Serial.print(",");
+    //wdt_reset();                                        //Akkor kell alkalmazni, ha a watchdog újraindítja a mikrokontrollert
+  }
+  Serial.println();
+  Serial.println("=======================================================");
+}
+
+
+void topPeaks(double* vReal, double* topPeak)
+{
+  double maxY = 0;
+  uint16_t IndexOfMaxY = 0;
+
+  for (uint16_t j = 0; j < topPeakNum; j++)
+  {
+    maxY = 0;
+    IndexOfMaxY = 0;
+    for (uint16_t i = 1; i < ((sampleNum >> 1) + 1); i++)
+    {
+      if ((vReal[i - 1] < vReal[i]) && (vReal[i] > vReal[i + 1]))
+      {
+        if (vReal[i] > maxY)
+        {
+          maxY = vReal[i];
+          IndexOfMaxY = i;
+        }
+      }
+      wdt_reset();
+    }
+
+    double delta = 0.5 * ((vReal[IndexOfMaxY - 1] - vReal[IndexOfMaxY + 1]) / (vReal[IndexOfMaxY - 1] - (2.0 * vReal[IndexOfMaxY]) + vReal[IndexOfMaxY + 1]));
+    double interpolatedX = ((IndexOfMaxY + delta)  * samplingFrequency) / (sampleNum - 1);
+
+    if (IndexOfMaxY == (sampleNum >> 1))
+    {
+      interpolatedX = ((IndexOfMaxY + delta)  * samplingFrequency) / (sampleNum);
+    }
+
+    topPeak[j] = interpolatedX;
+    vReal[IndexOfMaxY] = 0.0;
+  }
+}
