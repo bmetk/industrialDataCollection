@@ -1,0 +1,74 @@
+//**********Megjegyzés**********
+//Ez egy segéd tesztprogram amivel
+//ellenőrizhető a mintavételezés tényleges ideje
+//és tesztelhető, hogy az eszköz milyen mintavételi
+//frekvenciákon képes működni
+//******************************
+
+
+#include <MPU9250_asukiaaa.h>
+MPU9250_asukiaaa mySensor;
+float aX, aY, aZ, aSqrt;
+
+int addr = 0;                           //Aktuálisan erre a tömkbindexre írunk
+const int sampleNum = 1024;
+float data[sampleNum];
+
+unsigned long samplingFrequency = 10000;            //[Hz]
+
+unsigned long previousMicros = 0;
+unsigned long samplingTime = round(1000000.0/samplingFrequency);          //Sampling time in microseconds
+unsigned long startTime = 0;
+unsigned long endTime = 0;
+unsigned long deltaTime = 0;
+
+
+void setup() {
+  Wire.begin();
+  mySensor.setWire(&Wire);
+  mySensor.beginAccel();
+
+  Serial.begin(115200);
+  while(!Serial);
+  Serial.println("started");
+
+  //i2cWriteByte(uint8_t Address, uint8_t Register, uint8_t Data);
+  //i2cRead(uint8_t Address, uint8_t Register, uint8_t Nbytes, uint8_t* Data);
+  
+  //mySensor.i2cWriteByte(0x68, 0x1D, 0b00001000);
+  //mySensor.i2cWriteByte(0x68, /*PWR_MGMT_2*/ 0x6C, 0b00000111);
+}
+
+
+void loop() {
+  
+  startTime = micros();
+  previousMicros = micros();
+  
+  while (addr < sampleNum)
+  {
+    if(micros() >= previousMicros + samplingTime) 
+    {
+        mySensor.accelUpdate();   
+        data[addr] = mySensor.accelSqrt();
+        previousMicros += samplingTime;
+        addr = addr + 1;
+    }
+    wdt_reset();
+  }
+
+  endTime = micros();
+  addr = 0;
+  deltaTime = endTime-startTime;
+  
+  Serial.print("Az eltelt idő: ");
+  Serial.println(deltaTime);
+
+  //===========================
+  /*for (int i=0; i < sampleNum; i++)
+  {
+    Serial.println(data[i]);
+    wdt_reset();
+  }*/
+  //===========================
+}
